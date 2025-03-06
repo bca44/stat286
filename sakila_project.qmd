@@ -1,0 +1,445 @@
+---
+title: Top Performers for Sakila and Recommendations for Marketing and Inventory Focus
+format: html
+editor: source
+---
+
+```{r}
+#| warning: false
+#| echo: false
+#| message: false
+
+# Load packages
+library(tidyverse)
+library(RMySQL)
+library(gt)
+```
+
+```{r}
+#| warning: false
+#| echo: false
+
+# Connect to Database
+statdb <- dbConnect(MySQL(), user='bcand', password='github_only_password', dbname='sakila')
+```
+
+```{r}
+#| warning: false
+#| echo: false
+
+# Import from statdb
+
+query.top_genres <- "SELECT 
+    category AS genre, 
+    total_sales, 
+    SUM(total_sales) OVER () AS worldwide_sales, 
+    total_sales / SUM(total_sales) OVER () AS percent
+FROM sales_by_film_category
+ORDER BY total_sales DESC;"
+
+top_genres <- dbGetQuery(statdb, query.top_genres)
+
+query.top_countries <- "SELECT 
+    co.country, 
+    SUM(p.amount) AS total_sales,
+    SUM(SUM(p.amount)) OVER () AS worldwide_sales,
+    SUM(p.amount) / SUM(SUM(p.amount)) OVER () AS percent
+FROM payment p 
+JOIN customer c ON p.customer_id = c.customer_id
+JOIN address a ON c.address_id = a.address_id
+JOIN city ci ON a.city_id = ci.city_id
+JOIN country co ON ci.country_id = co.country_id
+GROUP BY co.country
+ORDER BY total_sales DESC;"
+
+top_countries <- dbGetQuery(statdb, query.top_countries)
+
+query.top_movies <- "SELECT 
+    f.title AS title, 
+    SUM(p.amount) AS total_sales,
+    SUM(SUM(p.amount)) OVER () AS worldwide_sales,
+    SUM(p.amount) / SUM(SUM(p.amount)) OVER () AS percent
+FROM payment p 
+JOIN rental r ON p.rental_id = r.rental_id
+JOIN inventory i ON r.inventory_id = i.inventory_id
+JOIN film f ON i.film_id = f.film_id
+GROUP BY f.title
+ORDER BY total_sales DESC;
+"
+
+top_movies <- dbGetQuery(statdb, query.top_movies)
+```
+
+# Introduction
+
+This report contains an analysis of Sakila Movie Rentals’ best-performing movies, genres, and countries. The objective is to identify trends in revenue and provide insights for marketing and inventory decisions. Data was pulled from the company’s database and analyzed to determine which movies, genres, and countries contributed the most to sales. The findings presented below will help guide future marketing strategies and inventory management.
+
+# Top Performing Genres
+
+As should be expected, revenue performance varied significantly across movie genres. The analysis indicates that the Sports genre outperformed all others, generating the highest total revenue.
+
+The chart below shows the 10 best-performing genres and their total rental sales:
+
+```{r}
+#| warning: false
+#| echo: false
+#| 
+top_genres |>
+  head(n=10) |>
+  ggplot(
+    aes(factor(genre, levels=unique(genre)), total_sales)
+  )+
+  geom_bar(fill = "royalblue", stat = "identity")+
+  scale_x_discrete(guide = guide_axis(angle = 45))+
+  labs(
+    x="Genre",
+    y="Total Rentals") +
+  theme_minimal()
+```
+
+Below is a further breakdown of the top ten genres:
+
+```{r}
+#| warning: false
+#| echo: false
+
+top_genres |>
+  head(n=10) |>
+  select(-worldwide_sales)|> 
+  gt() |> 
+  cols_label(
+    genre = "Genre",
+    total_sales = "Total Sales",
+    percent = "% of Global Sales"
+  ) |> 
+  fmt_currency(
+    columns = total_sales,
+    currency = "USD"
+  ) |> 
+  fmt_percent(
+    columns = percent,
+    decimals = 2
+  ) |>
+  tab_options(
+    table.border.top.color = "black",
+    table.border.bottom.color = "black",
+    heading.align = "center"
+  )
+
+```
+
+### Key Takeaways:
+
+-   Sports movies dominate rental sales, providing 7.88% of our total revenue - a lead of 0.82%.
+-   Sci-Fi, Animation, and Drama are not to be forgotten either, with around 7% for each.
+
+### Suggestions:
+
+-   Marketing of Sports movies should be our largest focus going forward.
+-   Inventory of these most popular genres should be prioritized over other, less popular categories.
+
+# Most Popular Movies
+
+A deep dive into individual movie performance shows that the difference in performance between individual movies is less pronounced than it is between genres. This makes sense, however, given that we supplied 997 movies across only 16 categories.
+
+Below is a graph showing the the top-grossing movies based on total rental sales:
+
+```{r}
+#| warning: false
+#| echo: false
+
+top_movies |>
+  head(n=10) |>
+  ggplot(
+    aes(factor(title, levels=unique(title)), total_sales)
+  )+
+  geom_bar(fill = "royalblue", stat = "identity")+
+  scale_x_discrete(guide = guide_axis(angle = 45))+
+  labs(
+    x="Title",
+    y="Total Rentals") +
+  theme_minimal()
+
+```
+
+See the table below for a further breakdown of the top ten movies:
+
+```{r}
+#| warning: false
+#| echo: false
+
+top_movies |>
+  head(n=10) |>
+  select(-worldwide_sales) |>
+  gt() |> 
+  cols_label(
+    title = "Movie Title",
+    total_sales = "Total Sales ($)",
+    percent = "% of Global Sales"
+  ) |> 
+  fmt_currency(
+    columns = total_sales,
+    currency = "USD"
+  ) |> 
+  fmt_percent(
+    columns = percent,
+    decimals = 2
+  ) |>
+  tab_options(
+    table.border.top.color = "black",
+    table.border.bottom.color = "black",
+    heading.align = "center"
+  )
+
+```
+
+### Key Takeaways:
+
+-   The top-grossing movie outperforms the rest, highlighting strong consumer demand for certain titles.
+-   Many of the highest-earning movies align with the most successful genres, reinforcing the importance of genre-based marketing.
+-   The success of these movies presents an opportunity for targeted promotions, such as limited-time discounts or featured recommendations.
+
+### Suggestions:
+
+-   Inventory Strategy: Ensure consistent availability of these high-performing titles to maximize rental revenue.
+-   Marketing Opportunities: Leverage the popularity of top movies in promotional campaigns to drive engagement.
+-   Content Acquisition: Consider acquiring similar titles or sequels to capitalize on existing demand.
+
+# Highest Returning Countries
+
+Sakila Movie Rentals operates in multiple countries, and sales distribution varies across regions. The differences across countries are the largest, percent-wise, that we have seen so far. Given that we operate in 109 countries, these stark differences seem even more significant. Analyzing our per country revenue provides insights into where our strongest markets are.
+
+The following chart illustrates the top-performing countries in terms of total rental sales:
+
+```{r}
+#| warning: false
+#| echo: false
+#| 
+top_countries |>
+  head(n=10) |>
+  ggplot(
+    aes(factor(country, levels=unique(country)), total_sales)
+  )+
+  geom_bar(fill = "royalblue", stat = "identity")+
+  scale_x_discrete(guide = guide_axis(angle = 45))+
+  labs(
+    x="Country",
+    y="Total Rentals") +
+  theme_minimal()
+
+```
+
+Below is a further breakdown of the top ten highest-performing countries:
+
+```{r}
+#| warning: false
+#| echo: false
+
+top_countries |>
+  head(n=10) |>
+  select(-worldwide_sales) |>
+  gt() |> 
+  cols_label(
+    country = "Country",
+    total_sales = "Total Sales ($)",
+    percent = "% of Global Sales"
+  ) |> 
+  fmt_currency(
+    columns = total_sales,
+    currency = "USD"
+  ) |> 
+  fmt_percent(
+    columns = percent,
+    decimals = 2
+  ) |>
+  tab_options(
+    table.border.top.color = "black",
+    table.border.bottom.color = "black",
+    heading.align = "center"
+  )
+
+```
+
+### Key Takeaways:
+
+-   Together, India and China account for 18.44% of our total rental sale revenue.
+-   The top 8 countries together account for 43.87% of our revenue.
+
+### Suggestions:
+
+-   Large countries with low rental sales should be targeted especially hard with our upcoming marketing outreach, to bring those numbers up closer to population giants China and India.
+-   Countries with low rental sales and low movie infrastructure should be weighed and we should consider if they there are worth investing in or not.
+
+## Conclusion & Recommendations
+
+Based on the analysis, several key recommendations emerge:
+
+1.  **Inventory Optimization**: Increase stock of top-performing genres and movies to meet demand.
+
+2.  **Marketing Strategies**: Leverage the popularity of Sports and Action films to create themed promotions and loyalty incentives.
+
+3.  **Regional Focus**: Strengthen marketing efforts in top-performing countries while exploring ways to boost engagement in lower-performing regions or pulling out of low-potential markets.
+
+## Attributions
+
+Information on the sakila database can be found at <https://dev.mysql.com/doc/sakila/en/>.
+
+## Code Used in Writing This Report
+
+```{r}
+#| eval: false
+
+library(tidyverse)
+library(RMySQL)
+library(gt)
+
+# Connect to locally-hosted copy of MySQL's sakila db
+
+statdb <- dbConnect(MySQL(), user='bcand', password='github_only_password', dbname='sakila')
+
+query.top_genres <- "SELECT 
+    category AS genre, 
+    total_sales, 
+    SUM(total_sales) OVER () AS worldwide_sales, 
+    total_sales / SUM(total_sales) OVER () AS percent
+FROM sales_by_film_category
+ORDER BY total_sales DESC;"
+
+top_genres <- dbGetQuery(statdb, query.top_genres)
+
+query.top_countries <- "SELECT 
+    co.country, 
+    SUM(p.amount) AS total_sales,
+    SUM(SUM(p.amount)) OVER () AS worldwide_sales,
+    SUM(p.amount) / SUM(SUM(p.amount)) OVER () AS percent
+FROM payment p 
+JOIN customer c ON p.customer_id = c.customer_id
+JOIN address a ON c.address_id = a.address_id
+JOIN city ci ON a.city_id = ci.city_id
+JOIN country co ON ci.country_id = co.country_id
+GROUP BY co.country
+ORDER BY total_sales DESC;"
+
+top_countries <- dbGetQuery(statdb, query.top_countries)
+
+query.top_movies <- "SELECT 
+    f.title AS title, 
+    SUM(p.amount) AS total_sales,
+    SUM(SUM(p.amount)) OVER () AS worldwide_sales,
+    SUM(p.amount) / SUM(SUM(p.amount)) OVER () AS percent
+FROM payment p 
+JOIN rental r ON p.rental_id = r.rental_id
+JOIN inventory i ON r.inventory_id = i.inventory_id
+JOIN film f ON i.film_id = f.film_id
+GROUP BY f.title
+ORDER BY total_sales DESC;
+"
+
+top_movies <- dbGetQuery(statdb, query.top_movies)
+
+top_genres |>
+  head(n=10) |>
+  ggplot(
+    aes(factor(genre, levels=unique(genre)), total_sales)
+  )+
+  geom_bar(fill = "royalblue", stat = "identity")+
+  scale_x_discrete(guide = guide_axis(angle = 45))+
+  labs(
+    x="Genre",
+    y="Total Rentals") +
+  theme_minimal()
+
+top_genres |>
+  head(n=10) |>
+  select(-worldwide_sales)|> 
+  gt() |> 
+  cols_label(
+    genre = "Genre",
+    total_sales = "Total Sales",
+    percent = "% of Global Sales"
+  ) |> 
+  fmt_currency(
+    columns = total_sales,
+    currency = "USD"
+  ) |> 
+  fmt_percent(
+    columns = percent,
+    decimals = 2
+  ) |>
+  tab_options(
+    table.border.top.color = "black",
+    table.border.bottom.color = "black",
+    heading.align = "center"
+  )
+
+top_movies |>
+  head(n=10) |>
+  ggplot(
+    aes(factor(title, levels=unique(title)), total_sales)
+  )+
+  geom_bar(fill = "royalblue", stat = "identity")+
+  scale_x_discrete(guide = guide_axis(angle = 45))+
+  labs(
+    x="Title",
+    y="Total Rentals") +
+  theme_minimal()
+
+top_movies |>
+  head(n=10) |>
+  select(-worldwide_sales) |>
+  gt() |> 
+  cols_label(
+    title = "Movie Title",
+    total_sales = "Total Sales ($)",
+    percent = "% of Global Sales"
+  ) |> 
+  fmt_currency(
+    columns = total_sales,
+    currency = "USD"
+  ) |> 
+  fmt_percent(
+    columns = percent,
+    decimals = 2
+  ) |>
+  tab_options(
+    table.border.top.color = "black",
+    table.border.bottom.color = "black",
+    heading.align = "center"
+  )
+
+top_countries |>
+  head(n=10) |>
+  ggplot(
+    aes(factor(country, levels=unique(country)), total_sales)
+  )+
+  geom_bar(fill = "royalblue", stat = "identity")+
+  scale_x_discrete(guide = guide_axis(angle = 45))+
+  labs(
+    x="Country",
+    y="Total Rentals") +
+  theme_minimal()
+
+top_countries |>
+  head(n=10) |>
+  select(-worldwide_sales) |>
+  gt() |> 
+  cols_label(
+    country = "Country",
+    total_sales = "Total Sales ($)",
+    percent = "% of Global Sales"
+  ) |> 
+  fmt_currency(
+    columns = total_sales,
+    currency = "USD"
+  ) |> 
+  fmt_percent(
+    columns = percent,
+    decimals = 2
+  ) |>
+  tab_options(
+    table.border.top.color = "black",
+    table.border.bottom.color = "black",
+    heading.align = "center"
+  )
+
+```
