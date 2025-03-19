@@ -20,7 +20,7 @@ library(gt)
 #| echo: false
 
 # Connect to Database
-statdb <- dbConnect(MySQL(), user='bcand', password='github_only_password', dbname='sakila')
+statdb <- dbConnect(#finish the statement here, connecting to an instance of MySQL's Sakila database)
 ```
 
 ```{r}
